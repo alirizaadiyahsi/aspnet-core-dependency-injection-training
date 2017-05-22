@@ -1,7 +1,16 @@
 ﻿using System;
+using System.IO;
 using System.Linq;
+using Autofac;
+using Autofac.Extensions.DependencyInjection;
+using Castle.MicroKernel.Registration;
+using Castle.Windsor;
+using Castle.Windsor.MsDependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using ServiceDescriptor = Microsoft.Extensions.DependencyInjection.ServiceDescriptor;
 
 namespace AspnetCore.DI.ConsoleApp
 {
@@ -9,9 +18,76 @@ namespace AspnetCore.DI.ConsoleApp
     {
         static void Main(string[] args)
         {
-            MultipleImplementation();
-            MultipleImplementationWithTry();
-            MultipleImplementationWithReplace();
+            ServiceOptionsDemo2();
+        }
+
+        private static void AutofacDemo()
+        {
+            IServiceCollection services = new ServiceCollection();
+            services.AddTransient<MyService>();
+
+            var containerBuilder = new ContainerBuilder();
+            containerBuilder.RegisterType<MyService>();
+            containerBuilder.Populate(services);
+
+            var container = containerBuilder.Build();
+            var serviceProvider = new AutofacServiceProvider(container);
+            var myService = serviceProvider.GetService<MyService>();
+        }
+
+        private static void CastleWindsorDemo()
+        {
+            IServiceCollection services = new ServiceCollection();
+            services.AddTransient<MyService>();
+
+            var windsorContainer = new WindsorContainer();
+
+            windsorContainer.Register(
+                Component.For<MyService>()
+            );
+
+            var serviceProvider = WindsorRegistrationHelper.CreateServiceProvider(
+                windsorContainer,
+                services
+            );
+
+            var myService = serviceProvider.GetService<MyService>();
+        }
+
+        private static void ServiceOptionsDemo2()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddJsonFile(Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json"))
+                .Build();
+
+            IServiceCollection services = new ServiceCollection();
+
+            services.AddOptions();
+            services.AddScoped<MyTaxCalculator>();
+
+            services.Configure<MyTaxCalculatorOptions>(configuration.GetSection("TaxOptions"));
+
+            var serviceProvider = services.BuildServiceProvider();
+
+            var calculator = serviceProvider.GetRequiredService<MyTaxCalculator>();
+            Console.WriteLine(calculator.Calculate(200));
+        }
+
+        private static void ServiceOptionsDemo1()
+        {
+            IServiceCollection services = new ServiceCollection();
+
+            services.AddOptions();
+            services.AddTransient<MyTaxCalculator>();
+            services.Configure<MyTaxCalculatorOptions>(options =>
+            {
+                options.TaxRatio = 135;
+            });
+
+            var serviceProvider = services.BuildServiceProvider();
+            var calculator = serviceProvider.GetService<MyTaxCalculator>();
+
+            Console.WriteLine(calculator.Calculate(100));
         }
 
         private static void MultipleImplementation()
@@ -192,6 +268,31 @@ namespace AspnetCore.DI.ConsoleApp
             Console.WriteLine();
             Console.WriteLine("-----------------------------");
             Console.WriteLine();
+        }
+    }
+
+    public class MyTaxCalculator
+    {
+        private readonly MyTaxCalculatorOptions _options;
+
+        public MyTaxCalculator(IOptions<MyTaxCalculatorOptions> options)
+        {
+            _options = options.Value;
+        }
+
+        public int Calculate(int amount)
+        {
+            return amount * _options.TaxRatio / 100;
+        }
+    }
+
+    public class MyTaxCalculatorOptions
+    {
+        public int TaxRatio { get; set; }
+
+        public MyTaxCalculatorOptions()
+        {
+            TaxRatio = 118;
         }
     }
 
